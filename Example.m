@@ -5,6 +5,8 @@
 %      Preprint ArXiv http://arxiv.org/abs/1507.07173
 % 
 
+MIF_handle = @Decomp_MIF_2D_v12;
+
 z2=[];
 
 iMax=8;
@@ -69,8 +71,8 @@ axis([1 size(f,1) floor(min(min(f))) ceil(max(max(f)))])
 close all
 clc
 
-opts=decompSettings_MIF_2D_v01('plots',0,'MIF.delta',0.01);
-[IMF,SDlog,havelog] = Decomp_MIF_2D_v10(f,opts,1);
+opts=decompSettings_MIF_2D_v01('plots',0,'MIF.delta',0.01, 'MIF.fft', true);
+[IMF,SDlog,havelog] = MIF_handle(f,opts,1); 
 
 figure
 h=surf(IMF(:,:,1));
@@ -106,7 +108,7 @@ axis([1 size(IMF(:,:,2),1) floor(min(min(IMF(:,:,2)))) ceil(max(max(IMF(:,:,2)))
 close all
 
 opts=decompSettings_MIF_2D_v01('plots',0,'MIF.delta',0.01);
-[IMF2,SDlog1,havelog1] = Decomp_MIF_2D_v10(IMF(:,:,end),opts,1);
+[IMF2,SDlog1,havelog1] = MIF_handle(IMF(:,:,end),opts,1);
 
 %% IMF using mask length (1000x2+1)
 

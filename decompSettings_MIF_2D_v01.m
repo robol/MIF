@@ -53,6 +53,8 @@ function options = decompSettings_MIF_2D_v01(varargin)
 %                  'p'  - periodical
 %                  'r'  - reflection
 %  MIF.MaxInner    (200)   Max number of inner steps
+%  MIF.fft         (true) Boolean: if true, use the direct iteration by
+%                         means of the FFT.
 %
 % ------------------------------------------------------
 % EXAMPLE
@@ -101,6 +103,7 @@ Names = {
     'MIF.Xi'
     'MIF.extensionType'
     'MIF.MaxInner'
+	'MIF.fft'
 };
 
 obsoletenames ={ % Use when options have become obsolete
@@ -132,6 +135,7 @@ else
     options.MIF.Xi=1.6;
     options.MIF.extensionType='c';
     options.MIF.MaxInner= 200;
+	options.MIF.fft = true;
 end
 
 i = paramstart;

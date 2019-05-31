@@ -1,5 +1,4 @@
-function [IMF,SDlog,havelog] = Decomp_MIF_2D_v10(f,options,alpha)
-
+function [IMF,SDlog,havelog] = Decomp_MIF_2D_v12(f,options,alpha)
 %
 % Generate the decomposition of a 2D signal f :
 %
@@ -101,54 +100,97 @@ end
         if options.plots>0
             ImgIMF=figure;
             ImgR=figure;
-        end
-        
+		end
+		
+		if options.MIF.fft
+			% Precompute the FFT of the signal and of the filter, so we can
+			% apply it with almost no computations
+			[fftm, fftn] = size(h);
+			[fftp, fftq] = size(A);
+			
+			% Note that if the filter has a support larger than our image
+			% we might need to extend the image a little bit. The repmat
+			% command takes care of that.
+			if fftp > fftm || fftq > fftn
+				fftH = repmat(h, ceil(max(fftp/fftm, fftn/fftq)));
+				[fftm, fftn] = size(fftH);
+			else
+				fftH = h;
+			end
+			
+			% Pad A the right way -- this is required to make sure the
+			% center of gravity of the filter is in position (1,1) before
+			% taking the FFT
+			l1 = floor(fftp/2); m1 = floor(fftq/2);
+			l2 = fftp - l1; m2 = fftq - m1;
+			fftA = zeros(fftm, fftn); 
+			fftA(1:l2,1:m2) = A(l1+1:end,m1+1:end);
+			fftA(end-l1+1:end,end-m1+1:end) = A(1:l1,1:m1);
+			fftA(end-l1+1:end,1:m2) = A(1:l1,m1+1:end);
+			fftA(1:l2,end-m1+1:end) = A(l1+1:end,1:m1);
+			
+			% Precomputing FFTs for later use
+			fftH = fft2(fftH);
+			fftA = fft2(fftA);
+			
+			% r1 and r2 are updated throughout the iterations so that r1 /
+			% r2 is equal to the relative change in the solution at step j.
+			% To accomplish these, some values are accumulated in
+			% filter_factors (which indeed describes the action of the
+			% accumulated filter on all the frequencies), making use of the
+			% variable incr_filter. 
+			r2 = abs(fftH).^2;
+			r1 = r2 .* abs(fftA).^2;
+			incr_filter = (1 - abs(fftA)).^2;
+			filter_factors = ones(size(fftA));
+		end        
         
         while SD>options.MIF.delta && inStepN < options.MIF.MaxInner
             inStepN=inStepN+1;
             
-            %             if strcmp(options.MIF.extensionType,'p')
-            %                 if m > N
-            %                     ff = [h(N-rem(m,N)+1:N), h, h, h, h(1:rem(m,N))];
-            %                 else
-            %                     ff = [h(N-m+1:N), h, h(1:m)]; %this could also just be ff = [h, h, h]
-            %                 end
-            %             elseif strcmp(options.MIF.extensionType,'r')
-            %                 if m > N
-            %                     ff = [h(N-rem(m,N)+1:N), fliplr(h), h, fliplr(h), h(1:rem(m,N))];
-            %                 else
-            %                     ff = [h(m:-1:1), h, h(N:-1:N-m+1)];
-            %                 end
-            %             elseif
-            if strcmp(options.MIF.extensionType,'c')
-                ff = [h(1,1)*ones(m,m), ones(m,1)*h(1,:), h(1,end)*ones(m,m);
-                    h(:,1)*ones(1,m), h, h(:,end)*ones(1,m);
-                    h(end,1)*ones(m,m), ones(m,1)*h(end,:), h(end,end)*ones(m,m)];
-            end
-            
-            
-            
-             h_ave=zeros(N);
-             for i=1:N(1)
-                 for j=1:N(2)
-                     h_ave(i,j)=sum(sum(A.*(ff(i:i+2*m,j:j+2*m)),1),2);
-                 end
- 			end
-			
-			h_ave = conv2(h, A, 'same');
+			% FIXME: Similar to the 1D case, this might be made more
+			% efficient skipping the iterations completely, and just
+			% computing the necessary index j. 
+			if options.MIF.fft
+				% Construct the residual for checking the stopping
+				% criterion
+				h_avenrm = sqrt(sum(sum( r2 .* filter_factors )));
+				SD = sum(sum( r1 .* filter_factors )) ./ ...
+					 h_avenrm^2;
+				 
+				% We never explicitly compute h_ave, and we construct the
+				% final solution h only at convergence
+				if SD < options.MIF.delta || inStepN > options.MIF.MaxInner
+					h = real(ifft2( fftH .* (1 - fftA).^(inStepN) ));
+				else
+					% Update the filter factors for the next round
+					filter_factors = incr_filter .* filter_factors;
+				end
+			else
+				h_ave = conv2(h, A, 'same');
+				
+				h_avenrm = norm(h_ave, 'fro');
+				SD=h_avenrm^2 / norm(h, 'fro')^2;
+			end
             
             %%%%%%%%%%%%%%%% Updating stopping criterium %%%%%%%%%%%%%%%%%
             
-            SD=norm(h_ave)^2/norm(h)^2;
             SDlog=[SDlog SD];
-            havelog=[havelog norm(h_ave)];
+            havelog=[havelog h_avenrm];
             if options.verbose>0
                 fprintf('    %2.0d      %1.14f          %2.0d\n',inStepN,SD,m)
             end
             
             %%%%%%%%%%%%%%%%%% generating f_n %%%%%%%%%%%%%%%%%%
             
-            h=h-h_ave;
+			% If using the FFT, then we do not need to subtract the
+			% average, which is not computed explicitly. The function h
+			% will be automatically constructed at convergence by a direct
+			% approach applying the filter with FFT (1 - fftA).^j. 
+			if ~options.MIF.fft
+				h=h-h_ave;
+			end
+			
             if options.plots>0
                 figure(ImgIMF)
                 surfH=surf(h);
@@ -170,7 +212,7 @@ end
         if inStepN >= options.MIF.MaxInner
             disp('Max # of inner steps reached')
             return
-        end  
+        end 
         
         close all
         
